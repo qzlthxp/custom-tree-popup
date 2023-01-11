@@ -4,7 +4,11 @@
 
 当前插件主要作为弹窗来使用，每次打开弹窗都会初始化状态，如果只是作为表单选择器组件此时推荐使用 [`custom-tree-select`](https://ext.dcloud.net.cn/plugin?id=10295) 组件。 
 
-由于煞笔业务调整，app开发转为企业微信小程序开发，因此插件不再进行维护。
+**如果在微信小程序中使用，在 `main.js` 文件中添加以下代码**
+
+```js
+Vue.prototype.$bus = new Vue()
+```
 
 ## 优势
 

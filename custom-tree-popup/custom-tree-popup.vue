@@ -23,11 +23,11 @@
             <text>{{ confirmText }}</text>
           </view>
         </view>
-        <view v-if="treeData.length" class="select-content">
-          <view v-show="search" class="search-box">
-            <uni-easyinput :maxlength="-1" prefixIcon="search" placeholder="搜索" @input="handleSearch"></uni-easyinput>
-          </view>
-          <view v-show="!filterTreeData.length" class="no-data" center>
+        <view v-if="search" class="search-box">
+          <uni-easyinput :maxlength="-1" prefixIcon="search" placeholder="搜索" @input="handleSearch"></uni-easyinput>
+        </view>
+        <scroll-view v-if="treeData.length" class="select-content" scroll-y="true" @touchmove.stop>
+          <view v-if="!filterTreeData.length" class="no-data center">
             <text>暂无数据</text>
           </view>
           <data-select-item
@@ -39,8 +39,8 @@
             :dataChildren="dataChildren"
             :choseParent="choseParent"
           ></data-select-item>
-        </view>
-        <view v-else class="no-data" center>
+        </scroll-view>
+        <view v-else class="no-data center">
           <text>暂无数据</text>
         </view>
       </view>
@@ -134,7 +134,8 @@ export default {
       treeData: [],
       filterTreeData: [],
       selectedList: [],
-      contentHeight: '500px'
+      contentHeight: '500px',
+      timer: null
     }
   },
   watch: {
@@ -159,6 +160,12 @@ export default {
   },
   mounted() {
     this.getContentHeight(uni.getSystemInfoSync())
+    this.$bus.$on('custom-tree-popup-node-click', (node) => {
+      this.handleNodeClick(node)
+    })
+    this.$bus.$on('custom-tree-popup-name-click', (node) => {
+      this.handleHideChildren(node)
+    })
   },
   methods: {
     done() {
@@ -166,7 +173,11 @@ export default {
       this.close()
     },
     handleSearch(str) {
-      this.filterTreeData = this.searchValue(str, this.treeData)
+      if (this.timer) clearTimeout(this.timer)
+      this.timer = setTimeout(() => {
+        this.filterTreeData = this.searchValue(str, this.treeData)
+        uni.hideKeyboard()
+      }, 300)
     },
     searchValue(str, arr) {
       const res = []
@@ -200,7 +211,7 @@ export default {
         }
       }
     },
-    getContentHeight({ screenHeight = 600 }) {
+    getContentHeight({ screenHeight }) {
       this.contentHeight = `${Math.floor(screenHeight * 0.7)}px`
     },
     open() {
@@ -211,7 +222,6 @@ export default {
       this.$refs.popup.close()
     },
     change(data) {
-      this.filterTreeData = this.treeData
       this.selectedList.splice(0, this.selectedList.length)
       this.$emit('change', data)
     },
@@ -448,8 +458,6 @@ export default {
 
 <style lang="scss" scoped>
 .custom-tree-select-content {
-  
-
   .popup-content {
     background-color: #fff;
     border-top-left-radius: 20px;
@@ -460,6 +468,7 @@ export default {
     .title {
       padding: 8px 3rem;
       border-bottom: 1px solid $uni-border-color;
+      font-size: 14px;
       display: flex;
       justify-content: space-between;
       position: relative;
@@ -480,32 +489,27 @@ export default {
       }
     }
 
+    .search-box {
+      margin: 8px 10px 0;
+      background-color: #fff;
+    }
+
     .select-content {
       padding: 8px 10px;
       flex: 1;
       overflow-x: hidden;
       overflow-y: auto;
       position: relative;
-
-      .search-box {
-        margin-bottom: 10px;
-        background-color: #fff;
-        box-shadow: 0 0 10px #eee;
-        position: sticky;
-        top: 0;
-        z-index: 1;
-      }
     }
   }
 
   .no-data {
-    width: 100%;
+    width: auto;
     color: #999;
     font-size: 12px;
   }
 
-  .no-data[center=''],
-  .no-data[align='center'] {
+  .no-data.center {
     text-align: center;
   }
 }
