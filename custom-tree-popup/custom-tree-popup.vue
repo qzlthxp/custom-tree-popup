@@ -160,12 +160,6 @@ export default {
   },
   mounted() {
     this.getContentHeight(uni.getSystemInfoSync())
-    this.$bus.$on('custom-tree-popup-node-click', (node) => {
-      this.handleNodeClick(node)
-    })
-    this.$bus.$on('custom-tree-popup-name-click', (node) => {
-      this.handleHideChildren(node)
-    })
   },
   methods: {
     done() {
@@ -216,10 +210,18 @@ export default {
     },
     open() {
       if (this.disabled) return
+      this.$bus.$on('custom-tree-popup-node-click', (node) => {
+        this.handleNodeClick(node)
+      })
+      this.$bus.$on('custom-tree-popup-name-click', (node) => {
+        this.handleHideChildren(node)
+      })
       this.$refs.popup.open()
     },
     close() {
       this.$refs.popup.close()
+      this.$bus.$off('custom-tree-select-node-click')
+      this.$bus.$off('custom-tree-select-name-click')
     },
     change(data) {
       this.selectedList.splice(0, this.selectedList.length)
