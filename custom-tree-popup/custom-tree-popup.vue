@@ -1,6 +1,7 @@
 <template>
   <view class="custom-tree-select-content">
     <uni-popup
+      v-if="showPopup"
       ref="popup"
       :animation="animation"
       :is-mask-click="isMaskClick"
@@ -26,20 +27,22 @@
         <view v-if="search" class="search-box">
           <uni-easyinput :maxlength="-1" prefixIcon="search" placeholder="搜索" @input="handleSearch"></uni-easyinput>
         </view>
-        <scroll-view v-if="treeData.length" class="select-content" scroll-y="true" @touchmove.stop>
-          <view v-if="!filterTreeData.length" class="no-data center">
-            <text>暂无数据</text>
-          </view>
-          <data-select-item
-            v-for="item in filterTreeData"
-            :key="item[dataValue]"
-            :node="item"
-            :dataLabel="dataLabel"
-            :dataValue="dataValue"
-            :dataChildren="dataChildren"
-            :choseParent="choseParent"
-          ></data-select-item>
-        </scroll-view>
+        <view v-if="treeData.length" class="select-content">
+          <scroll-view class="scroll-view-box" scroll-y="true" @touchmove.stop>
+            <view v-if="!filterTreeData.length" class="no-data center">
+              <text>暂无数据</text>
+            </view>
+            <data-select-item
+              v-for="item in filterTreeData"
+              :key="item[dataValue]"
+              :node="item"
+              :dataLabel="dataLabel"
+              :dataValue="dataValue"
+              :dataChildren="dataChildren"
+              :choseParent="choseParent"
+            ></data-select-item>
+          </scroll-view>
+        </view>
         <view v-else class="no-data center">
           <text>暂无数据</text>
         </view>
@@ -135,7 +138,8 @@ export default {
       filterTreeData: [],
       selectedList: [],
       contentHeight: '500px',
-      timer: null
+      timer: null,
+      showPopup: false
     }
   },
   watch: {
@@ -210,21 +214,38 @@ export default {
     },
     open() {
       if (this.disabled) return
-      this.$bus.$on('custom-tree-popup-node-click', (node) => {
-        this.handleNodeClick(node)
+      this.showPopup = true
+      this.$nextTick(() => {
+        this.$refs.popup.open()
+        this.selectedList.splice(0, this.selectedList.length)
       })
-      this.$bus.$on('custom-tree-popup-name-click', (node) => {
-        this.handleHideChildren(node)
-      })
-      this.$refs.popup.open()
     },
     close() {
       this.$refs.popup.close()
-      this.$bus.$off('custom-tree-select-node-click')
-      this.$bus.$off('custom-tree-select-name-click')
     },
     change(data) {
-      this.selectedList.splice(0, this.selectedList.length)
+      if (data.show) {
+        // #ifdef MP-WEIXIN
+        this.$bus.$on('custom-tree-popup-node-click', (node) => {
+          this.handleNodeClick(node)
+        })
+        this.$bus.$on('custom-tree-popup-name-click', (node) => {
+          this.handleHideChildren(node)
+        })
+        // #endif
+      } else {
+        // #ifdef MP-WEIXIN
+        this.$bus.$off('custom-tree-select-node-click')
+        this.$bus.$off('custom-tree-select-name-click')
+        // #endif
+        if (this.animation) {
+          setTimeout(() => {
+            this.showPopup = false
+          }, 200)
+        } else {
+          this.showPopup = false
+        }
+      }
       this.$emit('change', data)
     },
     maskClick() {
@@ -461,6 +482,7 @@ export default {
 <style lang="scss" scoped>
 .custom-tree-select-content {
   .popup-content {
+    flex: 1;
     background-color: #fff;
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
@@ -497,11 +519,20 @@ export default {
     }
 
     .select-content {
-      padding: 8px 10px;
+      margin: 8px 10px;
       flex: 1;
-      overflow-x: hidden;
-      overflow-y: auto;
+      overflow: hidden;
       position: relative;
+    }
+
+    .scroll-view-box {
+      touch-action: none;
+      flex: 1;
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
     }
   }
 

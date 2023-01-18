@@ -25,7 +25,7 @@
           :disabled="node.disabled"
           :value="node[dataValue].toString()"
           :checked="node.checked"
-          @click.stop="nodeClick"
+          @click.stop="nodeClick(node)"
         />
       </view>
     </view>

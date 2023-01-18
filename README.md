@@ -7,7 +7,9 @@
 **如果在微信小程序中使用，在 `main.js` 文件中添加以下代码**
 
 ```js
-Vue.prototype.$bus = new Vue()
+// #ifdef MP-WEIXIN
+  Vue.prototype.$bus = new Vue()
+// #endif
 ```
 
 ## 优势
@@ -54,7 +56,8 @@ Vue.prototype.$bus = new Vue()
 ```vue
 <template>
   <!--/pages/index/index-->
-  <custom-tree-popup :listData="listData" @done="done"  />
+	<button @click="$refs.treePopup.open()">打开弹窗</button>
+  <custom-tree-popup ref="treePopup" :listData="listData" @done="done"  />
 </template>
 
 <script>
