@@ -25,10 +25,18 @@
           </view>
         </view>
         <view v-if="search" class="search-box">
-          <uni-easyinput :maxlength="-1" prefixIcon="search" placeholder="搜索" @input="handleSearch"></uni-easyinput>
+          <uni-easyinput
+            :maxlength="-1"
+            prefixIcon="search"
+            placeholder="搜索"
+            v-model="searchStr"
+            confirm-type="search"
+            @confirm="handleSearch"
+          ></uni-easyinput>
+          <button type="primary" size="mini" class="search-btn" @click="handleSearch">搜索</button>
         </view>
         <view v-if="treeData.length" class="select-content">
-          <scroll-view class="scroll-view-box" scroll-y="true" @touchmove.stop>
+          <scroll-view class="scroll-view-box" scroll-y="true" @touchmove.stop :scroll-top="scrollTop">
             <view v-if="!filterTreeData.length" class="no-data center">
               <text>暂无数据</text>
             </view>
@@ -130,6 +138,10 @@ export default {
     mutiple: {
       type: Boolean,
       default: false
+    },
+    showChildren: {
+      type: Boolean,
+      default: true
     }
   },
   data() {
@@ -137,9 +149,11 @@ export default {
       treeData: [],
       filterTreeData: [],
       selectedList: [],
+      clearTimerList: [],
       contentHeight: '500px',
-      timer: null,
-      showPopup: false
+      showPopup: false,
+      searchStr: '',
+      scrollTop: 0
     }
   },
   watch: {
@@ -150,7 +164,10 @@ export default {
         if (newVal.length) {
           this.treeData = this.deepCopy(newVal)
           this.initData(this.treeData)
-          this.filterTreeData = this.treeData
+          if (this.showPopup) {
+            this.resetClearTimerList()
+            this.renderTree(this.treeData)
+          }
         }
       }
     },
@@ -166,43 +183,83 @@ export default {
     this.getContentHeight(uni.getSystemInfoSync())
   },
   methods: {
+    // 分页
+    paging(data, PAGENUM = 50) {
+      if (!data instanceof Array || !data.length) return data
+      const pages = []
+      data.forEach((item, index) => {
+        const i = Math.floor(index / PAGENUM)
+        if (!pages[i]) {
+          pages[i] = []
+        }
+        pages[i].push(item)
+      })
+      return pages
+    },
+    // 懒加载
+    renderTree(arr) {
+      const pagingArr = this.paging(arr)
+      this.filterTreeData.splice(0, this.filterTreeData.length, ...(pagingArr?.[0] || []))
+      this.lazyRenderList(pagingArr, 1)
+    },
+    // 懒加载具体逻辑
+    lazyRenderList(arr, startIndex) {
+      for (let i = startIndex; i < arr.length; i++) {
+        let timer = null
+        timer = setTimeout(() => {
+          this.filterTreeData.push(...arr[i])
+        }, i * 500)
+        this.clearTimerList.push(() => clearTimeout(timer))
+      }
+    },
+    // 中断懒加载
+    resetClearTimerList() {
+      const list = [...this.clearTimerList]
+      this.clearTimerList.splice(0, this.clearTimerList.length)
+      list.forEach((item) => item())
+    },
+    // 搜索完成返回顶部
+    goTop() {
+      this.scrollTop = 10
+      this.$nextTick(() => {
+        this.scrollTop = 0
+      })
+    },
     done() {
       this.$emit('done', this.selectedList)
       this.close()
     },
-    handleSearch(str) {
-      if (this.timer) clearTimeout(this.timer)
-      this.timer = setTimeout(() => {
-        this.filterTreeData = this.searchValue(str, this.treeData)
-        uni.hideKeyboard()
-      }, 300)
+    handleSearch() {
+      this.resetClearTimerList()
+      this.renderTree(this.searchValue(this.searchStr, this.treeData))
+      this.goTop()
+      uni.hideKeyboard()
     },
     searchValue(str, arr) {
       const res = []
-
       arr.forEach((item) => {
-        if (item[this.dataLabel].toLowerCase().indexOf(str.toLowerCase()) > -1) {
-          res.push(item)
-        } else {
-          if (item[this.dataChildren]?.length) {
-            const data = this.searchValue(str, item[this.dataChildren])
-            if (data?.length) {
-              res.push({
-                ...item,
-                [this.dataChildren]: data
-              })
+        if (item.visible) {
+          if (item[this.dataLabel].toLowerCase().indexOf(str.toLowerCase()) > -1) {
+            res.push(item)
+          } else {
+            if (item[this.dataChildren]?.length) {
+              const data = this.searchValue(str, item[this.dataChildren])
+              if (data?.length) {
+                res.push({
+                  ...item,
+                  [this.dataChildren]: data
+                })
+              }
             }
           }
         }
       })
-
       return res
     },
     updateTreeData(arr) {
       if (arr.length) {
         for (let i = 0; i < arr.length; i++) {
           arr[i].checked = this.getTruthNode(arr[i]).checked
-
           if (arr[i][this.dataChildren]?.length) {
             this.updateTreeData(arr[i][this.dataChildren])
           }
@@ -213,11 +270,10 @@ export default {
       this.contentHeight = `${Math.floor(screenHeight * 0.7)}px`
     },
     open() {
-      if (this.disabled) return
       this.showPopup = true
       this.$nextTick(() => {
         this.$refs.popup.open()
-        this.selectedList.splice(0, this.selectedList.length)
+        this.renderTree(this.treeData)
       })
     },
     close() {
@@ -238,6 +294,9 @@ export default {
         this.$bus.$off('custom-tree-select-node-click')
         this.$bus.$off('custom-tree-select-name-click')
         // #endif
+        this.resetClearTimerList()
+        this.selectedList.splice(0, this.selectedList.length)
+        this.searchStr = ''
         if (this.animation) {
           setTimeout(() => {
             this.showPopup = false
@@ -299,7 +358,11 @@ export default {
         } else {
           this.$set(arr[i], 'visible', true)
         }
-        this.$set(arr[i], 'showChildren', arr[i].showChildren ?? true)
+        if ('showChildren' in arr[i] && arr[i].showChildren != undefined) {
+          this.$set(arr[i], 'showChildren', arr[i].showChildren)
+        } else {
+          this.$set(arr[i], 'showChildren', this.showChildren)
+        }
         if (!arr[i].handleNodeClick) {
           this.$set(arr[i], 'handleNodeClick', this.handleNodeClick)
         }
@@ -319,21 +382,17 @@ export default {
         }
         return pre
       }, [])
-
       for (let i = 0; i < node[this.dataChildren].length; i++) {
         res.push(...this.getChildren(node[this.dataChildren][i]))
       }
-
       return res
     },
     getParentNode(target, arr) {
       let res = []
-
       for (let i = 0; i < arr.length; i++) {
         if (arr[i][this.dataValue] === target[this.dataValue]) {
           return [arr[i]]
         }
-
         if (arr[i][this.dataChildren]?.length) {
           const result = this.getParentNode(target, arr[i][this.dataChildren])
           if (result.length && arr[i].visible) {
@@ -460,19 +519,15 @@ export default {
     },
     getName(id) {
       const arr = [...this.treeData]
-
       while (arr.length) {
         const item = arr.shift()
-
         if (item[this.dataValue].toString() === id) {
           return item[this.dataLabel]
         }
-
         if (item[this.dataChildren]?.length) {
           arr.push(...item[this.dataChildren])
         }
       }
-
       return ''
     }
   }
@@ -516,6 +571,14 @@ export default {
     .search-box {
       margin: 8px 10px 0;
       background-color: #fff;
+      display: flex;
+      align-items: center;
+
+      .search-btn {
+        margin-left: 10px;
+        height: 35px;
+        line-height: 35px;
+      }
     }
 
     .select-content {
