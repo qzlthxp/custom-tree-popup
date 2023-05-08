@@ -82,6 +82,7 @@
 </template>
 
 <script>
+import { deepClone, paging, changeChildrenVisibleStatus } from './utils'
 import dataSelectItem from './data-select-item.vue'
 export default {
   name: 'custom-tree-select',
@@ -193,7 +194,7 @@ export default {
       immediate: true,
       handler(newVal) {
         if (newVal) {
-          this.treeData = this.deepCopy(newVal)
+          this.treeData = deepClone(newVal)
           this.initData(this.treeData)
           if (this.showPopup) {
             this.resetClearTimerList()
@@ -204,9 +205,14 @@ export default {
     },
     selectedList: {
       deep: true,
-      handler() {
-        this.initData(this.treeData)
-        this.updateTreeData(this.filterTreeData)
+      handler(newVal) {
+        const ids = newVal
+          ? Array.isArray(newVal)
+            ? newVal
+            : newVal.split(',')
+          : []
+        this.changeStatus(this.treeData, ids, true)
+        this.changeStatus(this.filterTreeData, ids, true)
       }
     }
   },
@@ -214,45 +220,6 @@ export default {
     this.getContentHeight(uni.getSystemInfoSync())
   },
   methods: {
-    deepCopy(target) {
-      let copyed_objs = [] //此数组解决了循环引用和相同引用的问题，它存放已经递归到的目标对象
-      function _deepCopy(target) {
-        if (typeof target !== 'object' || !target) {
-          return target
-        }
-        for (let i = 0; i < copyed_objs.length; i++) {
-          if (copyed_objs[i].target === target) {
-            return copyed_objs[i].copyTarget
-          }
-        }
-        let obj = {}
-        if (Array.isArray(target)) {
-          obj = [] //处理target是数组的情况
-        }
-        copyed_objs.push({ target: target, copyTarget: obj })
-        Object.keys(target).forEach((key) => {
-          if (obj[key]) {
-            return
-          }
-          obj[key] = _deepCopy(target[key])
-        })
-        return obj
-      }
-      return _deepCopy(target)
-    },
-    // 分页
-    paging(data, PAGENUM = 50) {
-      if (!Array.isArray(data) || !data.length) return data
-      const pages = []
-      data.forEach((item, index) => {
-        const i = Math.floor(index / PAGENUM)
-        if (!pages[i]) {
-          pages[i] = []
-        }
-        pages[i].push(item)
-      })
-      return pages
-    },
     // 搜索完成返回顶部
     goTop() {
       this.scrollTop = 10
@@ -320,7 +287,7 @@ export default {
     },
     // 懒加载
     renderTree(arr) {
-      const pagingArr = this.paging(arr)
+      const pagingArr = paging(arr)
       this.filterTreeData.splice(
         0,
         this.filterTreeData.length,
@@ -353,19 +320,11 @@ export default {
     // 弹窗状态变化 包括点击回显框和遮罩
     change(data) {
       if (data.show) {
-        // #ifdef MP-WEIXIN
-        this.$bus.$on('custom-tree-popup-node-click', (node) => {
-          this.handleNodeClick(node)
-        })
-        this.$bus.$on('custom-tree-popup-name-click', (node) => {
-          this.handleHideChildren(node)
-        })
-        // #endif
+        uni.$on('custom-tree-popup-node-click', this.handleNodeClick)
+        uni.$on('custom-tree-popup-name-click', this.handleHideChildren)
       } else {
-        // #ifdef MP-WEIXIN
-        this.$bus.$off('custom-tree-select-node-click')
-        this.$bus.$off('custom-tree-select-name-click')
-        // #endif
+        uni.$off('custom-tree-popup-node-click', this.handleNodeClick)
+        uni.$off('custom-tree-popup-name-click', this.handleHideChildren)
         this.resetClearTimerList()
         this.selectedList.splice(0, this.selectedList.length)
         this.searchStr = ''
@@ -404,11 +363,7 @@ export default {
         }
         if (JSON.stringify(arr[i].visible) === 'false') {
           this.$set(arr[i], 'visible', false)
-          if (arr[i][this.dataChildren]?.length) {
-            for (let j = 0; j < arr[i][this.dataChildren].length; j++) {
-              arr[i][this.dataChildren][j].visible = false
-            }
-          }
+          changeChildrenVisibleStatus(arr[i], this.dataChildren)
         } else {
           this.$set(arr[i], 'visible', true)
         }
@@ -417,19 +372,10 @@ export default {
         } else {
           this.$set(arr[i], 'showChildren', this.showChildren)
         }
-        if (!arr[i].handleNodeClick) {
-          this.$set(arr[i], 'handleNodeClick', this.handleNodeClick)
-        }
-        if (!arr[i].handleHideChildren) {
-          this.$set(arr[i], 'handleHideChildren', this.handleHideChildren)
-        }
         if (arr[i][this.dataChildren]?.length) {
           this.initData(arr[i][this.dataChildren])
         }
       }
-    },
-    isString(data) {
-      return typeof data === 'string'
     },
     // 获取某个节点所有子元素
     getChildren(node) {
@@ -448,17 +394,24 @@ export default {
     // 获取某个节点所有父元素
     getParentNode(target, arr) {
       let res = []
+
       for (let i = 0; i < arr.length; i++) {
         if (arr[i][this.dataValue] === target[this.dataValue]) {
-          return [arr[i]]
+          return true
         }
+
         if (arr[i][this.dataChildren]?.length) {
-          const result = this.getParentNode(target, arr[i][this.dataChildren])
-          if (result.length && arr[i].visible) {
-            res = [...result, arr[i]]
+          const childRes = this.getParentNode(target, arr[i][this.dataChildren])
+          if (arr[i].visible) {
+            if (typeof childRes === 'boolean' && childRes) {
+              res = [arr[i]]
+            } else if (Array.isArray(childRes) && childRes.length) {
+              res = [...childRes, arr[i]]
+            }
           }
         }
       }
+
       return res
     },
     // 获取某个节点所有兄弟元素
@@ -521,20 +474,16 @@ export default {
       node.checked = !node.checked
       // 如果是单选不考虑其他情况
       if (!this.mutiple) {
+        let emitData = []
         if (node.checked) {
-          this.selectedList.splice(
-            0,
-            this.selectedList.length,
-            node[this.dataValue].toString()
-          )
-        } else {
-          this.selectedList.splice(0, this.selectedList.length)
+          emitData = [node[this.dataValue].toString()]
         }
+        this.selectedList = emitData
       } else {
         // 多选情况
         if (!this.linkage) {
           // 不需要联动
-          let emitData = []
+          let emitData = null
           if (node.checked) {
             emitData = Array.from(
               new Set([...this.selectedList, node[this.dataValue].toString()])
@@ -544,42 +493,37 @@ export default {
               (id) => id !== node[this.dataValue].toString()
             )
           }
-          this.selectedList.splice(0, this.selectedList.length, ...emitData)
+          this.selectedList = emitData
         } else {
           // 需要联动
           let emitData = [...this.selectedList]
-          let childrenVal = []
-          if (node[this.dataChildren]?.length) {
-            childrenVal = this.getChildren(node)
-              .filter((item) => !item.disabled)
-              .map((item) => item[this.dataValue].toString())
-          }
-          const contiguousNodes = this.getContiguousNodes(
-            node,
-            this.treeData
-          ).filter((item) => !item.disabled)
-          const [_, ...parentNodes] = this.getParentNode(node, this.treeData)
+          const parentNodes = this.getParentNode(node, this.treeData)
+          const childrenVal = this.getChildren(node).filter(
+            (item) => !item.disabled
+          )
           if (node.checked) {
             // 选中
             emitData = Array.from(
               new Set([...emitData, node[this.dataValue].toString()])
             )
             if (childrenVal.length) {
-              // 选中全部子节点
-              emitData = Array.from(new Set([...emitData, ...childrenVal]))
+              emitData = Array.from(
+                new Set([
+                  ...emitData,
+                  ...childrenVal.map((item) => item[this.dataValue].toString())
+                ])
+              )
             }
-            if (
-              parentNodes.length &&
-              this.allChecked(emitData, contiguousNodes)
-            ) {
+            if (parentNodes.length) {
               // 有父元素 如果父元素下所有子元素全部选中，选中父元素
               while (parentNodes.length) {
                 const item = parentNodes.shift()
                 if (!item.disabled) {
-                  const children = this.getChildren(item).filter(
-                    (child) => !child.disabled
+                  const allChecked = item[this.dataChildren].every(
+                    (node) => node.checked
                   )
-                  if (this.allChecked(emitData, children)) {
+                  if (allChecked) {
+                    item.checked = true
                     emitData = Array.from(
                       new Set([...emitData, item[this.dataValue].toString()])
                     )
@@ -594,21 +538,59 @@ export default {
             emitData = emitData.filter(
               (id) => id !== node[this.dataValue].toString()
             )
+            if (parentNodes.length) {
+              parentNodes.forEach((parentNode) => {
+                emitData = emitData.filter(
+                  (id) => id !== parentNode[this.dataValue].toString()
+                )
+              })
+            }
             if (childrenVal.length) {
               // 取消选中全部子节点
-              childrenVal.forEach((childVal) => {
-                emitData = emitData.filter((id) => id !== childVal)
+              childrenVal.forEach((childNode) => {
+                emitData = emitData.filter(
+                  (id) => id !== childNode[this.dataValue].toString()
+                )
               })
             }
           }
-          this.selectedList.splice(0, this.selectedList.length, ...emitData)
+          this.selectedList = emitData
         }
       }
     },
     // 点击名称折叠或展开
     handleHideChildren(node) {
-      this.getFilterTreeNode(node).showChildren =
-        !this.getFilterTreeNode(node).showChildren
+      const status = !node.showChildren
+      this.getTruthNode(node).showChildren = status
+      this.getFilterTreeNode(node).showChildren = status
+    },
+    // 根据 dataValue 找节点
+    changeStatus(list, ids, checkedState) {
+      const arr = [...list]
+      const data =
+        typeof ids === 'string'
+          ? ids.split(',')
+          : ids.map((item) => item.toString())
+
+      while (arr.length) {
+        const item = arr.shift()
+
+        if (data.includes(item[this.dataValue].toString())) {
+          this.$set(item, 'checked', checkedState)
+        } else {
+          this.$set(item, 'checked', !checkedState)
+        }
+
+        if (!item.checked) {
+          this.isSelectedAll = false
+        }
+
+        if (item[this.dataChildren]?.length) {
+          arr.push(...item[this.dataChildren])
+        }
+      }
+
+      return null
     }
   }
 }
